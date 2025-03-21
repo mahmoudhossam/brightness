@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -22,11 +23,16 @@ type HAConfig struct {
 	Entity  string
 }
 
+type SensorAttributes struct {
+	Unit string `json:"unit_of_measurement"`
+}
+
 type SensorResponse struct {
-	Value        string `json:"state"`
-	LastChanged  string `json:"last_changed"`
-	LastUpdated  string `json:"last_updated"`
-	LastReported string `json:"last_reported"`
+	Value        string           `json:"state"`
+	LastChanged  string           `json:"last_changed"`
+	LastUpdated  string           `json:"last_updated"`
+	LastReported string           `json:"last_reported"`
+	Attributes   SensorAttributes `json:"attributes"`
 }
 
 type BrightnessRange struct {
@@ -85,6 +91,7 @@ func readResponse(resp *http.Response) *SensorResponse {
 	if err != nil {
 		log.Errorf("error reading response: %v", err)
 	}
+	log.Debug(string(response))
 	sensorResponse := SensorResponse{}
 	json.Unmarshal(response, &sensorResponse)
 	return &sensorResponse
@@ -131,19 +138,24 @@ func main() {
 	godotenv.Load()
 	config := getConfig()
 	monitor := getMonitor(0)
-	current := getBrightness(monitor)
-	log.Infof("current brightness: %v", current)
+	log.SetLevel(log.InfoLevel)
 
-	sensor := getSensor(config)
-	log.Infof("sensor value: %v", sensor.Value)
-	value, err := strconv.ParseFloat(sensor.Value, 64)
-	if err != nil {
-		log.Errorf("Error parsing sensor value: %v", err)
+	for {
+		current := getBrightness(monitor)
+		log.Infof("current brightness: %v%%", current)
+		sensor := getSensor(config)
+		log.Infof("sensor value: %v %v", sensor.Value, sensor.Attributes.Unit)
+		value, err := strconv.ParseFloat(sensor.Value, 64)
+		if err != nil {
+			log.Errorf("Error parsing sensor value: %v", err)
+		}
+		percentage := getPercentage(int(value))
+		if percentage != current {
+			setBrightness(monitor, percentage)
+		} else {
+			log.Warnf("brightness is already at %v%%, skipping...", current)
+		}
+		time.Sleep(5 * time.Second)
 	}
-	percentage := getPercentage(int(value))
-	if percentage != current {
-		setBrightness(monitor, percentage)
-	} else {
-		log.Warnf("brightness is already at %v%%, skipping...", current)
-	}
+
 }
